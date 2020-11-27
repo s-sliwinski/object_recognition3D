@@ -18,26 +18,31 @@ class MakePointCloud:
     def __init__(self):
         rospy.loginfo("pointcloud object detection is running...")
 
+        # frame size
+        self.frame_x = 640
+        self.frame_y = 480
+
+        self.bridge = CvBridge()
+
+        # mockup detected objects
+        self.detected_objects = [[(self.frame_x // 2 - 50), (self.frame_y // 2 - 50), (self.frame_x//2 + 50), (self.frame_y // 2 + 50)],
+                                [20, 20, 80, 80],
+                                [500, 300, 600, 400]]
+        print(self.detected_objects)
+
+        # cv_image and pcl variables
+        self.cv_image = np.zeros([self.frame_x, self.frame_y])
+        self.pcl = None
+
+        # transform config
+        self.tf_listener = tf.TransformListener()
+        self.tf_pub = tf.TransformBroadcaster()
+
         # subscribers
         self.img_sub = rospy.Subscriber("/camera/rgb/image_raw", Image, self.rgb_callback)
         self.pcl_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.pcl_callback)
         # publishers
         self.img_detected_pub = rospy.Publisher("/img_detected_frame", Image, queue_size=100)
-
-        # frame size
-        self.frame_x = 640
-        self.frame_y = 480
-        # self.global_frame = "/camera_link"
-        self.bridge = CvBridge()
-
-        # cv_image and pcl variables
-        self.cv_image = None
-        self.pcl = None
-
-        # transform config
-        #tfBuffer = tf.Buffer()
-        self.tf_listener = tf.TransformListener()
-        self.tf_pub = tf.TransformBroadcaster()
 
     # callback converting rgb to cv2_image
     def rgb_callback(self, data):
@@ -55,14 +60,23 @@ class MakePointCloud:
 
     # main functionality publishing detected bouning box img and doing transform
     def detection(self):
-        # test bbox
-        bbox = [(self.frame_x // 2 - 50), (self.frame_y // 2 - 50), (self.frame_x//2 + 50), (self.frame_y // 2 + 50)]
-        xA, yA, xB, yB = bbox
-        x_center = xB - ((xB - xA) // 2)
-        y_center = xA - ((yB - yA) // 2)
-        # draw rectangle 100x100 in the center for testing
-        cv2.rectangle(self.cv_image, (xA, yA), (xB, yB), (0,255,0), 3)
 
+        for bbox in self.detected_objects:
+            xA, yA, xB, yB = bbox
+            x_center = xB - ((xB - xA) // 2)
+            y_center = yB - ((yB - yA) // 2)
+            # draw rectangle for testing
+            cv2.rectangle(self.cv_image, (xA, yA), (xB, yB), (0,255,0), 3)
+
+            # get point from center of detected object
+            pcl_list = list(pc2.read_points(self.pcl, skip_nans=True, field_names=('x', 'y', 'z'), uvs=[(x_center, y_center)]))
+            # print(x_center, y_center)
+            # print(pcl_list)
+
+            if len(pcl_list) > 0:
+                x_point, y_point, z_point = pcl_list[0]
+                object_tf_array = np.array([z_point, -x_point, -y_point])
+                self.tf_pub.sendTransform((object_tf_array), q(0,0,0), rospy.Time.now(), 'object' + str(bbox[0]) , 'camera_link')
 
         try:
             img_msg = self.bridge.cv2_to_imgmsg(self.cv_image, 'bgr8')
@@ -72,23 +86,13 @@ class MakePointCloud:
         # publish image with bbox
         self.img_detected_pub.publish(img_msg)
 
-        # get point from center of detected object
-        pcl_list = list(pc2.read_points(self.pcl, skip_nans=True, field_names=('x', 'y', 'z'), uvs=[(x_center, y_center)]))
-
-
-        if len(pcl_list) > 0:
-            x_point, y_point, z_point = pcl_list[0]
-            object_tf_array = np.array([z_point, -x_point, -y_point])
-            self.tf_pub.sendTransform((object_tf_array), q(0,0,0), rospy.Time.now(), 'object' , 'camera_link')
-
-            
 def main():
     rospy.init_node('make_point_cloud', anonymous=True)
     mpc = MakePointCloud()
     try:
         rospy.spin()
     except KeyboardInterrupt:
-        print("...shutting down")
+        rospy.loginfo("...shutting down")
 
 if __name__ == "__main__":
     main()
