@@ -9,6 +9,8 @@ from tf.transformations import quaternion_from_euler as q
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from sensor_msgs import point_cloud2 as pc2
 from std_msgs.msg import Header
+from visualization_msgs.msg import Marker
+from visualization_msgs.msg import MarkerArray
 
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
